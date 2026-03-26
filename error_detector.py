@@ -1,104 +1,73 @@
 import ast
 
-code = '''
-import os
-import sys
-from datetime import datetime, timedelta
 
-def short_function():
-    print("This is short")
+class AIReview(ast.NodeVisitor):
 
-def long_function():
-    a = 1
-    b = 2
-    c = 3
-    d = 4
-    e = 5
-    f = 6
-    g = 7
-    h = 8
-    i = 9
-    j = 10
-    k = 11
-    l = 12
-    m = 13
-    n = 14
-    o = 15
-    p = 16
-    q = 17
-    r = 18
-    s = 19
-    t = 20
-    u = 21
-    v = 22
-    w = 23
-    x = 24
-    y = 25
-    z = 26
-    aa = 27
-    bb = 28
-    cc = 29
-    dd = 30
-    ee = 31
-    ff = 32
-    gg = 33
-    hh = 34
-    ii = 35
-    jj = 36
-    kk = 37
-    ll = 38
-    mm = 39
-    nn = 40
-    oo = 41
-'''
+    def __init__(self):
+        self.defined = set()
+        self.used = set()
+        self.infinite_loops = []
 
-tree = ast.parse(code)
+    # ---------------- IMPORT TRACKING ---------------- #
 
-
-# IMPORT FINDER
-
-class ImportFinder(ast.NodeVisitor):
     def visit_Import(self, node):
         for alias in node.names:
-            print(f'Found import: {alias.name}')
+            self.defined.add(alias.asname or alias.name)
+        self.generic_visit(node)
 
     def visit_ImportFrom(self, node):
-        print(f'Found import from: {node.module}')
+        for alias in node.names:
+            self.defined.add(alias.asname or alias.name)
+        self.generic_visit(node)
 
+    # ---------------- VARIABLE TRACKING ---------------- #
 
-# VARIABLE TRACKER
-
-
-class VariableContextTracker(ast.NodeVisitor):
     def visit_Name(self, node):
         if isinstance(node.ctx, ast.Store):
-            print(f"Variable '{node.id}' is being defined at line {node.lineno}")
+            self.defined.add(node.id)
         elif isinstance(node.ctx, ast.Load):
-            print(f"Variable '{node.id}' is being used at line {node.lineno}")
-        self.generic_visit(node)
-
-
-# FUNCTION LENGTH CHECKER (PEP8)
-
-
-class FunctionLengthChecker(ast.NodeVisitor):
-    def visit_FunctionDef(self, node):
-        start_line = node.lineno
-        end_line = node.end_lineno
-
-        function_length = end_line - start_line
-
-        print(f"\nFunction '{node.name}' starts at line {start_line} and ends at line {end_line}")
-        print(f"Function length: {function_length} lines")
-
-        if function_length > 40:
-            print(f"WARNING: Function '{node.name}' is too long (>{40} lines)")
+            self.used.add(node.id)
 
         self.generic_visit(node)
 
+    # ---------------- INFINITE LOOP DETECTION ---------------- #
+
+    def visit_While(self, node):
+
+        is_infinite_condition = False
+
+        # Case 1: while True
+        if isinstance(node.test, ast.Constant) and node.test.value == True:
+            is_infinite_condition = True
+
+        # Case 2: while 1
+        if isinstance(node.test, ast.Constant) and node.test.value == 1:
+            is_infinite_condition = True
+
+        if is_infinite_condition:
+            has_break = False
+
+            for child in ast.walk(node):
+                if isinstance(child, ast.Break):
+                    has_break = True
+                    break
+
+            if not has_break:
+                self.infinite_loops.append(node.lineno)
+
+        self.generic_visit(node)
 
 
+# ---------------- REPORT FUNCTION ---------------- #
 
-ImportFinder().visit(tree)
-VariableContextTracker().visit(tree)
-FunctionLengthChecker().visit(tree)
+def report_unused(tree):
+
+    review = AIReview()
+    review.visit(tree)
+
+    unused = review.defined - review.used
+
+    return {
+        "unused_variables": list(unused),
+        "infinite_loops": review.infinite_loops
+    }
