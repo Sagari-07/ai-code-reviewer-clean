@@ -14,6 +14,9 @@ class CodeState(rx.State):
     code_input: str = ""
     is_loading: bool = False
 
+    # ✅ NEW: Language state
+    language: str = "Python"
+
     unused_variables: List[str] = []
     infinite_loops: List[int] = []
     corrected_code: str = ""
@@ -26,6 +29,10 @@ class CodeState(rx.State):
     def set_code_input(self, code: str):
         self.code_input = code
 
+    # ✅ NEW: Set language from dropdown
+    def set_language(self, value: str):
+        self.language = value
+
     def analyze_code(self):
         if not self.code_input.strip():
             self.result = {
@@ -37,7 +44,11 @@ class CodeState(rx.State):
         self.is_loading = True
 
         try:
-            analysis_result = analyze_code_pipeline(self.code_input)
+            # ✅ PASS language to backend
+            analysis_result = analyze_code_pipeline(
+                self.code_input,
+                self.language   # <-- important
+            )
 
             insert_code(self.code_input)
 
@@ -47,9 +58,12 @@ class CodeState(rx.State):
 
             ai_text = analysis_result.get("ai_suggestion", "")
 
-            # ✅ REMOVE DUPLICATE TEXT
-            clean_text = ai_text.split("🔴 Syntax Errors")[1]
-            clean_text = "🔴 Syntax Errors" + clean_text.split("🔴 Syntax Errors")[0]
+            # ✅ SAFE CLEANING (avoid crash if text format changes)
+            if "🔴 Syntax Errors" in ai_text:
+                parts = ai_text.split("🔴 Syntax Errors")
+                clean_text = "🔴 Syntax Errors" + parts[1]
+            else:
+                clean_text = ai_text
 
             self.result = {
                 "status": "success",
@@ -77,34 +91,64 @@ def home():
 
         rx.center(
             rx.vstack(
+                # 🔥 Title with glow + animation
                 rx.heading(
                     " AI Code Reviewer",
                     size="9",
                     background="linear-gradient(90deg, #ff7e5f, #feb47b)",
                     background_clip="text",
-                    color="transparent"
+                    color="transparent",
+                    style={
+                        "textShadow": "0px 0px 20px rgba(255,126,95,0.6)",
+                        "animation": "fadeIn 1.5s ease-in-out"
+                    }
                 ),
 
+                # ✨ Subtitle improved
                 rx.text(
                     "Fix Bugs ⚡ Improve Code 🚀 Write Better Python 🐍",
                     font_size="18px",
                     color="lightgray",
-                    text_align="center"
+                    text_align="center",
+                    style={
+                        "opacity": "0.85",
+                        "animation": "fadeIn 2s ease-in-out"
+                    }
                 ),
 
+                # 🚀 Buttons with hover effects
                 rx.hstack(
                     rx.button(
                         "Start Analyzing 🔍",
                         on_click=rx.redirect("/analyzer"),
                         bg="linear-gradient(90deg, #ff7e5f, #feb47b)",
-                        color="white"
+                        color="white",
+                        size="3",
+                        style={
+                            "boxShadow": "0px 4px 15px rgba(255,126,95,0.4)",
+                            "transition": "0.3s",
+                        },
+                        _hover={
+                            "transform": "scale(1.08)",
+                            "boxShadow": "0px 6px 20px rgba(255,126,95,0.7)"
+                        }
                     ),
+
                     rx.button(
                         "View History 📜",
                         on_click=rx.redirect("/history"),
                         variant="outline",
                         color="white",
-                        border="1px solid white"
+                        border="1px solid white",
+                        size="3",
+                        style={
+                            "transition": "0.3s",
+                        },
+                        _hover={
+                            "bg": "white",
+                            "color": "#203a43",
+                            "transform": "scale(1.08)"
+                        }
                     ),
                     spacing="4"
                 ),
@@ -116,7 +160,11 @@ def home():
             width="100%"
         ),
 
+        # 🌌 Background + subtle overlay glow
         bg="linear-gradient(135deg, #0f2027, #203a43, #2c5364)",
+        style={
+            "backgroundImage": "radial-gradient(circle at top, rgba(255,126,95,0.15), transparent 70%)",
+        },
         min_height="100vh"
     )
 # ---------------- NAVBAR ---------------- #
@@ -297,6 +345,18 @@ def analyzer_page():
                 rx.heading("AI Code Analyzer", size="8", color="white"),
                 rx.text("Paste your code and get instant AI-powered review.", color="gray"),
 
+                # ✅ NEW: Language Dropdown (added cleanly)
+                rx.select(
+                    ["Python", "Java", "C", "C++", "JavaScript"],
+                    placeholder="Select Language",
+                    value=CodeState.language,
+                    on_change=CodeState.set_language,
+                    width="80%",
+                    bg="#020617",
+                    color="white",
+                    border_radius="10px",
+                ),
+
                 rx.box(
                     rx.text_area(
                         placeholder="Paste your Python code here...",
@@ -337,7 +397,7 @@ def analyzer_page():
                 ),
 
                 rx.cond(
-                   CodeState.result["status"] == "success",
+                    CodeState.result["status"] == "success",
                     rx.box(
                         result_section(),
                         width="80%",
